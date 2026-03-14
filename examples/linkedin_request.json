@@ -1,0 +1,35 @@
+{
+  "profile": {
+    "full_name": "Andre Candidate",
+    "email": "andre@example.com",
+    "phone": "+34 600 000 000",
+    "location": "Madrid",
+    "headline": "Automation Engineer",
+    "summary": "I build browser automation and API workflows for hiring systems.",
+    "target_roles": ["Automation Engineer", "Backend Python Engineer", "RPA Developer"],
+    "sectors": ["SaaS", "HR Tech", "Recruitment"],
+    "skills": ["python", "fastapi", "playwright", "openai", "postgresql"],
+    "languages": ["Spanish", "English"],
+    "years_experience": 4,
+    "salary_expectation_min": 40000,
+    "salary_expectation_currency": "EUR",
+    "cv_path": "./cv/andre_cv.pdf"
+  },
+  "search": {
+    "keywords": ["python", "automation", "backend"],
+    "location": "Madrid",
+    "remote_only": true,
+    "sectors": ["SaaS", "HR Tech"],
+    "seniority": "mid",
+    "linkedin_easy_apply_only": true,
+    "max_results_per_source": 10,
+    "sources": ["linkedin"]
+  },
+  "execution": {
+    "dry_run": true,
+    "enable_browser_automation": true,
+    "require_human_review": true,
+    "max_applications": 5,
+    "screenshot_each_step": true
+  }
+}

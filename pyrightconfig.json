@@ -1,0 +1,10 @@
+{
+  "include": [
+    "src",
+    "scripts"
+  ],
+  "extraPaths": [
+    "src"
+  ],
+  "typeCheckingMode": "basic"
+}
