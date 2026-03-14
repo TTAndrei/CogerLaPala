@@ -18,11 +18,14 @@ MVP para automatizar postulaciones de trabajo con un flujo seguro:
 
 ```text
 .
+├── app.py
 ├── .env.example
 ├── examples/sample_request.json
 ├── examples/linkedin_request.json
 ├── scripts/run_pipeline.py
 ├── src/cogerlapala/
+│   ├── entrypoint.py
+│   ├── gui_app.py
 │   ├── main.py
 │   ├── models.py
 │   └── services/
@@ -56,6 +59,10 @@ Variables relevantes:
 - `MAX_DAILY_APPLICATIONS`: limite diario del pipeline.
 - `DEFAULT_DRY_RUN`: modo seguro por defecto.
 - `SCREENSHOT_DIR`: carpeta de capturas durante automatizacion.
+- `DEFAULT_REQUEST_FILE`: request por defecto para el arranque unico.
+- `START_MODE`: `command`, `signal` o `immediate`.
+- `START_SIGNAL_FILE`: ruta del archivo de senal para modo `signal`.
+- `START_SIGNAL_TIMEOUT_SECONDS`: timeout en segundos en modo `signal`.
 
 Variables LinkedIn:
 
@@ -66,19 +73,48 @@ Variables LinkedIn:
 - `LINKEDIN_MANUAL_LOGIN_TIMEOUT_SECONDS`: tiempo para login manual.
 - `LINKEDIN_MAX_SEARCH_PAGES`: numero de paginas de resultados a recorrer.
 
-## Ejecutar API
+## Inicio Unico (Recomendado)
+
+Ejecuta siempre este comando para abrir la aplicacion con interfaz grafica:
 
 ```bash
-uvicorn cogerlapala.main:app --reload
+python app.py
 ```
 
-Endpoints:
+La app no inicia solicitudes automaticamente. Desde la interfaz puedes:
 
-- `GET /health`
-- `POST /pipeline/preview` (sin enviar)
-- `POST /pipeline/run` (ejecuta el pipeline)
+1. Cargar/guardar request JSON.
+2. Seleccionar CV desde explorador de archivos.
+3. Ajustar parametros de perfil, busqueda y ejecucion.
+4. Lanzar `Preview` o `Run` con botones.
 
-## Ejecutar Pipeline por CLI
+Si quieres abrir la app con un request concreto:
+
+```bash
+python app.py --request examples/sample_request.json
+```
+
+## Modos Avanzados
+
+- Modo CLI (flujo por terminal):
+
+```bash
+python app.py --cli --request examples/sample_request.json
+```
+
+- Modo API (FastAPI):
+
+```bash
+python app.py --api
+```
+
+## Ejecutar Pipeline por CLI (Avanzado)
+
+```bash
+python app.py --cli --request examples/sample_request.json
+```
+
+Tambien puedes usar el script directo:
 
 ```bash
 python scripts/run_pipeline.py --request examples/sample_request.json
@@ -94,14 +130,16 @@ El archivo `examples/sample_request.json` trae un ejemplo completo de:
 
 1. Copia `.env.example` a `.env` y configura, si quieres, `LINKEDIN_EMAIL` y `LINKEDIN_PASSWORD`.
 2. Asegura `LINKEDIN_HEADLESS=false` en la primera ejecucion.
-3. Ejecuta en modo seguro:
+3. Abre la interfaz:
 
 ```bash
-$env:PYTHONPATH='src'
-python scripts/run_pipeline.py --request examples/linkedin_request.json
+python app.py --request examples/linkedin_request.json
 ```
 
-En esta primera corrida, si no existe sesion guardada, el navegador te deja iniciar sesion manualmente y resolver MFA. Luego guarda estado en `LINKEDIN_STORAGE_STATE`.
+1. Desde la app, primero pulsa `Ejecutar Preview` para validar.
+2. Luego pulsa `Ejecutar Run` cuando quieras aplicar.
+
+En la primera corrida real, si no existe sesion guardada, el navegador te deja iniciar sesion manualmente y resolver MFA. Luego guarda estado en `LINKEDIN_STORAGE_STATE`.
 
 Para envio real automatico:
 
@@ -114,12 +152,45 @@ Notas del adapter LinkedIn:
 - Busca empleos por criterios con soporte para `linkedin_easy_apply_only`.
 - Intenta aplicar unicamente por flujos `Easy Apply`.
 - Si una oferta no tiene `Easy Apply`, se marca como fallo controlado y sigue con la siguiente.
+- `search.location` puede ser string (`"Madrid"`) o lista (`["Barcelona", "Madrid", "Galicia"]`).
+
+### Problema Comun: "navegador no seguro" al usar Google
+
+Google suele bloquear login OAuth en navegadores automatizados.
+
+Solucion recomendada:
+
+1. No uses el boton "Continuar con Google" dentro de la automatizacion.
+2. Inicia sesion con email/password de LinkedIn.
+3. Si tu cuenta es solo Google, crea una clave en LinkedIn (recuperar contrasena).
+4. Guarda `LINKEDIN_EMAIL` y `LINKEDIN_PASSWORD` en `.env`.
+5. Ejecuta de nuevo `python app.py`.
+
+Tras el primer login correcto, la sesion queda guardada en `LINKEDIN_STORAGE_STATE`.
 
 ## Seguridad Operativa
 
 - `dry_run=true` evita envio real.
 - `require_human_review=true` bloquea submit real aunque `dry_run=false`.
 - `enable_browser_automation=false` permite solo generar respuestas sin abrir navegador.
+
+## API (Avanzado)
+
+```bash
+python app.py --api
+```
+
+Tambien puedes arrancarla con uvicorn:
+
+```bash
+uvicorn cogerlapala.main:app --reload
+```
+
+Endpoints:
+
+- `GET /health`
+- `POST /pipeline/preview` (sin enviar)
+- `POST /pipeline/run` (ejecuta el pipeline)
 
 ## Agregar Fuentes Reales
 

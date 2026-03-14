@@ -67,18 +67,19 @@ class DemoAutonomousSource:
     async def search(self, params: SearchParameters) -> list[JobPosting]:
         keywords = {value.lower() for value in params.keywords}
         sectors = {value.lower() for value in params.sectors}
+        locations = params.location_values()
 
         results = [
             posting
             for posting in self._catalogue
-            if self._matches(posting, keywords, sectors, params)
+            if self._matches(posting, keywords, sectors, params, locations)
         ]
 
         if len(results) < min(3, params.max_results_per_source):
             results.extend(
                 self._synthesize_jobs(
                     keywords=keywords,
-                    location=params.location or "Remote",
+                    location=locations[0] if locations else "Remote",
                     count=min(3, params.max_results_per_source) - len(results),
                 )
             )
@@ -91,6 +92,7 @@ class DemoAutonomousSource:
         keywords: set[str],
         sectors: set[str],
         params: SearchParameters,
+        locations: list[str],
     ) -> bool:
         text = " ".join(
             [
@@ -105,8 +107,11 @@ class DemoAutonomousSource:
         sector_ok = not sectors or any(sector in text for sector in sectors)
 
         location_ok = True
-        if params.location:
-            location_ok = params.location.lower() in posting.location.lower() or posting.remote
+        if locations:
+            location_ok = (
+                any(location.lower() in posting.location.lower() for location in locations)
+                or posting.remote
+            )
 
         remote_ok = not params.remote_only or posting.remote
         return keyword_ok and sector_ok and location_ok and remote_ok

@@ -1,29 +1,84 @@
 {
   "profile": {
-    "full_name": "Andre Candidate",
-    "email": "andre@example.com",
-    "phone": "+34 600 000 000",
-    "location": "Madrid",
-    "headline": "Automation Engineer",
+    "full_name": "Andrei Akirov",
+    "email": "andrei.akigu@gmail.com",
+    "phone": "+34 641360271",
+    "location": "Sitges, Barcelona",
+    "headline": "Aerospace Engineer",
     "summary": "I build browser automation and API workflows for hiring systems.",
-    "target_roles": ["Automation Engineer", "Backend Python Engineer", "RPA Developer"],
-    "sectors": ["SaaS", "HR Tech", "Recruitment"],
-    "skills": ["python", "fastapi", "playwright", "openai", "postgresql"],
-    "languages": ["Spanish", "English"],
-    "years_experience": 4,
-    "salary_expectation_min": 40000,
+    "target_roles": [
+      "Aerospace Engineer",
+      "Mechanical Engineer",
+      "3d Modeling ",
+      "Aerodynamics"
+    ],
+    "sectors": [
+      "Industry",
+      "HR Tech",
+      "Recruitment"
+    ],
+    "skills": [
+      "Python",
+      "CFD",
+      "Autodesk Fusion",
+      "Autodesk CFD",
+      "Onshape",
+      "ANSYS",
+      "SolidWorks",
+      "Matlab",
+      "Simulink",
+      "Team Work",
+      "Project Management",
+      "Aerodynamics",
+      "3D Modeling"
+    ],
+    "languages": [
+      "Spanish",
+      "English",
+      "Catalan"
+    ],
+    "years_experience": 1,
+    "salary_expectation_min": 0,
     "salary_expectation_currency": "EUR",
-    "cv_path": "./cv/andre_cv.pdf"
+    "cv_path": "C:\\Users\\andre\\Desktop\\CV_English_Andrei_Akirov (2).pdf"
   },
   "search": {
-    "keywords": ["python", "automation", "backend"],
-    "location": "Madrid",
+    "keywords": [
+      "Python",
+      "CFD",
+      "Autodesk Fusion",
+      "Autodesk CFD",
+      "Onshape",
+      "ANSYS",
+      "SolidWorks",
+      "Matlab",
+      "Simulink",
+      "Team Work",
+      "Project Management",
+      "Aerodynamics",
+      "3D Modeling",
+      "Aerospace",
+      "Mechanical",
+      "Engineer",
+      "Remote"
+    ],
+    "location": [
+      "Barcelona",
+      "Madrid",
+      "Galicia"
+    ],
     "remote_only": true,
-    "sectors": ["SaaS", "HR Tech"],
-    "seniority": "mid",
+    "sectors": [
+      "Aerospace",
+      "Mechanical",
+      "Industry"
+    ],
+    "seniority": "Junior",
     "linkedin_easy_apply_only": true,
     "max_results_per_source": 10,
-    "sources": ["linkedin"]
+    "sources": [
+      "linkedin"
+    ]
   },
   "execution": {
     "dry_run": true,

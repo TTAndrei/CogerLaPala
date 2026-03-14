@@ -25,13 +25,29 @@ class CandidateProfile(BaseModel):
 
 class SearchParameters(BaseModel):
     keywords: list[str] = Field(default_factory=list)
-    location: str | None = None
+    location: str | list[str] | None = None
     remote_only: bool = False
     sectors: list[str] = Field(default_factory=list)
     seniority: str | None = None
     linkedin_easy_apply_only: bool = True
     max_results_per_source: int = Field(default=20, ge=1, le=100)
     sources: list[str] = Field(default_factory=lambda: ["demo"])
+
+    def location_values(self) -> list[str]:
+        if self.location is None:
+            return []
+
+        if isinstance(self.location, str):
+            normalized = self.location.strip()
+            return [normalized] if normalized else []
+
+        values: list[str] = []
+        for item in self.location:
+            if isinstance(item, str):
+                normalized = item.strip()
+                if normalized:
+                    values.append(normalized)
+        return values
 
 
 class JobPosting(BaseModel):

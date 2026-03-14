@@ -72,6 +72,7 @@ class LinkedInSource:
     async def search(self, params: SearchParameters) -> list[JobPosting]:
         collected: list[JobPosting] = []
         seen_urls: set[str] = set()
+        locations = params.location_values() or ["Spain"]
 
         async with async_playwright() as playwright:
             browser = await self._launch_browser(playwright)
@@ -83,27 +84,31 @@ class LinkedInSource:
                 if not authenticated:
                     return []
 
-                search_url = self._build_search_url(params)
-                await page.goto(search_url, wait_until="domcontentloaded", timeout=60000)
-                await page.wait_for_timeout(2000)
-
-                for page_index in range(self.max_search_pages):
-                    await self._scroll_results(page)
-                    jobs = await self._extract_jobs_from_page(page)
-
-                    for job in jobs:
-                        if job.url in seen_urls:
-                            continue
-                        seen_urls.add(job.url)
-                        collected.append(job)
-                        if len(collected) >= params.max_results_per_source:
-                            break
-
+                for search_location in locations:
                     if len(collected) >= params.max_results_per_source:
                         break
 
-                    if not await self._goto_next_page(page, page_index + 2):
-                        break
+                    search_url = self._build_search_url(params, search_location)
+                    await page.goto(search_url, wait_until="domcontentloaded", timeout=60000)
+                    await page.wait_for_timeout(2000)
+
+                    for page_index in range(self.max_search_pages):
+                        await self._scroll_results(page)
+                        jobs = await self._extract_jobs_from_page(page)
+
+                        for job in jobs:
+                            if job.url in seen_urls:
+                                continue
+                            seen_urls.add(job.url)
+                            collected.append(job)
+                            if len(collected) >= params.max_results_per_source:
+                                break
+
+                        if len(collected) >= params.max_results_per_source:
+                            break
+
+                        if not await self._goto_next_page(page, page_index + 2):
+                            break
 
                 await self._save_storage_state(context)
                 return collected[: params.max_results_per_source]
@@ -189,9 +194,9 @@ class LinkedInSource:
         self.storage_state_path.parent.mkdir(parents=True, exist_ok=True)
         await context.storage_state(path=str(self.storage_state_path))
 
-    def _build_search_url(self, params: SearchParameters) -> str:
+    def _build_search_url(self, params: SearchParameters, location_value: str) -> str:
         keywords = quote_plus(" ".join(params.keywords).strip() or "software engineer")
-        location = quote_plus((params.location or "Spain").strip())
+        location = quote_plus(location_value.strip() or "Spain")
 
         query_items = [
             f"keywords={keywords}",
