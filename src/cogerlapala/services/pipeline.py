@@ -104,6 +104,10 @@ def build_default_pipeline(settings: Settings) -> ApplicationPipeline:
             password=settings.linkedin_password,
             headless=settings.linkedin_headless,
             manual_login_timeout_seconds=settings.linkedin_manual_login_timeout_seconds,
+            ai_api_key=settings.openai_api_key,
+            ai_navigation_enabled=settings.linkedin_ai_navigation_enabled,
+            ai_navigation_model=settings.linkedin_ai_navigation_model,
+            ai_navigation_max_attempts=settings.linkedin_ai_navigation_max_attempts,
         ),
     )
 

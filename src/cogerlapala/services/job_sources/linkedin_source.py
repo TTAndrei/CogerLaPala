@@ -94,7 +94,10 @@ class LinkedInSource:
 
                     for page_index in range(self.max_search_pages):
                         await self._scroll_results(page)
-                        jobs = await self._extract_jobs_from_page(page)
+                        jobs = await self._extract_jobs_from_page(
+                            page,
+                            easy_apply_only=params.linkedin_easy_apply_only,
+                        )
 
                         for job in jobs:
                             if job.url in seen_urls:
@@ -218,7 +221,7 @@ class LinkedInSource:
             await page.mouse.wheel(0, 4000)
             await page.wait_for_timeout(450)
 
-    async def _extract_jobs_from_page(self, page: Page) -> list[JobPosting]:
+    async def _extract_jobs_from_page(self, page: Page, easy_apply_only: bool) -> list[JobPosting]:
         jobs: list[JobPosting] = []
         cards = page.locator(
             "li.jobs-search-results__list-item, li.scaffold-layout__list-item, div.job-card-container"
@@ -227,6 +230,10 @@ class LinkedInSource:
 
         for index in range(min(count, 40)):
             card = cards.nth(index)
+
+            if easy_apply_only and not await self._card_supports_easy_apply(card):
+                continue
+
             try:
                 await card.scroll_into_view_if_needed()
             except Exception:
@@ -304,6 +311,32 @@ class LinkedInSource:
             )
 
         return jobs
+
+    async def _card_supports_easy_apply(self, card: Locator) -> bool:
+        easy_words = [
+            "easy apply",
+            "solicitud sencilla",
+            "solicitud simplificada",
+            "aplicar facilmente",
+            "solicitar facilmente",
+        ]
+
+        badge_selectors = [
+            ".job-card-container__apply-method",
+            ".job-card-list__apply-method",
+            "span.artdeco-inline-feedback__message",
+        ]
+
+        for selector in badge_selectors:
+            loc = card.locator(selector)
+            if await loc.count() == 0:
+                continue
+            text = (await loc.first.inner_text()).strip().lower()
+            if any(word in text for word in easy_words):
+                return True
+
+        text = (await card.inner_text()).strip().lower()
+        return any(word in text for word in easy_words)
 
     async def _extract_description(self, page: Page) -> str:
         selectors = [

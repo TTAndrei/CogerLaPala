@@ -81,9 +81,9 @@
     ]
   },
   "execution": {
-    "dry_run": true,
+    "dry_run": false,
     "enable_browser_automation": true,
-    "require_human_review": true,
+    "require_human_review": false,
     "max_applications": 5,
     "screenshot_each_step": true
   }

@@ -50,8 +50,13 @@ python -m playwright install chromium
 
 ## Configuracion
 
-1. Copia `.env.example` a `.env`.
+1. Copia `.env.example` a `.env.local`.
 2. Si quieres usar IA para respuestas, agrega `OPENAI_API_KEY`.
+
+Orden de carga de variables:
+
+1. `.env.local`
+2. `.env` (fallback)
 
 Variables relevantes:
 
@@ -72,6 +77,9 @@ Variables LinkedIn:
 - `LINKEDIN_HEADLESS`: `false` recomendado en primer uso para login/MFA.
 - `LINKEDIN_MANUAL_LOGIN_TIMEOUT_SECONDS`: tiempo para login manual.
 - `LINKEDIN_MAX_SEARCH_PAGES`: numero de paginas de resultados a recorrer.
+- `LINKEDIN_AI_NAVIGATION_ENABLED`: activa fallback de navegacion asistida por IA.
+- `LINKEDIN_AI_NAVIGATION_MODEL`: modelo para decidir siguiente click en modal.
+- `LINKEDIN_AI_NAVIGATION_MAX_ATTEMPTS`: intentos de decision IA por paso.
 
 ## Inicio Unico (Recomendado)
 
@@ -128,7 +136,7 @@ El archivo `examples/sample_request.json` trae un ejemplo completo de:
 
 ## Flujo LinkedIn (busqueda + Easy Apply)
 
-1. Copia `.env.example` a `.env` y configura, si quieres, `LINKEDIN_EMAIL` y `LINKEDIN_PASSWORD`.
+1. Copia `.env.example` a `.env.local` y configura, si quieres, `LINKEDIN_EMAIL` y `LINKEDIN_PASSWORD`.
 2. Asegura `LINKEDIN_HEADLESS=false` en la primera ejecucion.
 3. Abre la interfaz:
 
@@ -150,9 +158,11 @@ Para envio real automatico:
 Notas del adapter LinkedIn:
 
 - Busca empleos por criterios con soporte para `linkedin_easy_apply_only`.
-- Intenta aplicar unicamente por flujos `Easy Apply`.
-- Si una oferta no tiene `Easy Apply`, se marca como fallo controlado y sigue con la siguiente.
+- Prioriza `Easy Apply`, y si no existe intenta flujo `Apply` externo con relleno basico.
+- Si el flujo externo no llega a `Submit`, se marca como fallo controlado y sigue con la siguiente.
 - `search.location` puede ser string (`"Madrid"`) o lista (`["Barcelona", "Madrid", "Galicia"]`).
+- Si los botones no encajan con selectores fijos, puede usar IA para leer texto visible del modal y elegir el click de avance.
+- Si aparece `External apply flow could not reach a submit action`, la vacante requiere interaccion no estandar; se guarda captura para revisarlo.
 
 ### Problema Comun: "navegador no seguro" al usar Google
 

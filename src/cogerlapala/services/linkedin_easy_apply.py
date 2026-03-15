@@ -1,14 +1,21 @@
 from __future__ import annotations
 
+import asyncio
+import json
 import re
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from playwright.async_api import Browser, BrowserContext, Locator, Page, Playwright, async_playwright
 
 from cogerlapala.models import FormAnswer, JobPosting
+
+try:
+    from openai import OpenAI
+except Exception:  # pragma: no cover - optional dependency runtime guard
+    OpenAI = None  # type: ignore[assignment]
 
 
 class LinkedInEasyApplyAutomator:
@@ -20,6 +27,10 @@ class LinkedInEasyApplyAutomator:
         password: str | None = None,
         headless: bool = False,
         manual_login_timeout_seconds: int = 180,
+        ai_api_key: str | None = None,
+        ai_navigation_enabled: bool = True,
+        ai_navigation_model: str = "gpt-4.1-mini",
+        ai_navigation_max_attempts: int = 1,
     ) -> None:
         self.storage_state_path = Path(storage_state_path)
         self.screenshot_dir = Path(screenshot_dir)
@@ -27,6 +38,10 @@ class LinkedInEasyApplyAutomator:
         self.password = password
         self.headless = headless
         self.manual_login_timeout_seconds = max(manual_login_timeout_seconds, 30)
+        self.ai_navigation_enabled = ai_navigation_enabled
+        self.ai_navigation_model = ai_navigation_model
+        self.ai_navigation_max_attempts = max(ai_navigation_max_attempts, 0)
+        self.ai_client = OpenAI(api_key=ai_api_key) if (ai_api_key and OpenAI) else None
 
     async def apply(
         self,
@@ -58,13 +73,21 @@ class LinkedInEasyApplyAutomator:
                     await page.wait_for_timeout(1800)
 
                     easy_apply_button = page.get_by_role(
-                        "button", name=re.compile(r"(easy apply|solicitud sencilla)", re.IGNORECASE)
+                        "button",
+                        name=re.compile(
+                            r"(easy\s*apply|solicitud\s*sencilla|solicitud\s+simplificada|"
+                            r"aplicar\s+facilmente|solicitar\s+facilmente)",
+                            re.IGNORECASE,
+                        ),
                     )
                     if await easy_apply_button.count() == 0:
-                        return (
-                            "failed",
-                            "Easy Apply not available for this job.",
-                            None,
+                        return await self._handle_external_apply(
+                            page=page,
+                            posting=posting,
+                            answers=answers,
+                            cv_path=cv_path,
+                            dry_run=dry_run,
+                            screenshot_each_step=screenshot_each_step,
                         )
 
                     await easy_apply_button.first.click()
@@ -116,7 +139,7 @@ class LinkedInEasyApplyAutomator:
                                 screenshot_path,
                             )
 
-                        advanced = await self._advance_step(page, modal.first)
+                        advanced = await self._advance_step(page, modal.first, step)
                         if not advanced:
                             break
 
@@ -264,7 +287,230 @@ class LinkedInEasyApplyAutomator:
         if await file_input.count() > 0:
             await file_input.first.set_input_files(str(path.resolve()))
 
-    async def _advance_step(self, page: Page, root: Locator) -> bool:
+    async def _handle_external_apply(
+        self,
+        page: Page,
+        posting: JobPosting,
+        answers: list[FormAnswer],
+        cv_path: str | None,
+        dry_run: bool,
+        screenshot_each_step: bool,
+    ) -> tuple[Literal["dry-run", "submitted", "failed"], str, str | None]:
+        screenshot_path: str | None = None
+
+        apply_control = await self._find_external_apply_control(page)
+        if apply_control is None:
+            if screenshot_each_step:
+                screenshot_path = str(self._external_step_screenshot_file(posting.id, 0))
+                await page.screenshot(path=screenshot_path, full_page=True)
+            return (
+                "failed",
+                "Easy Apply not available and no external Apply control was found.",
+                screenshot_path,
+            )
+
+        target_page = await self._click_apply_control(page, apply_control)
+
+        for step in range(1, 9):
+            root = target_page.locator("body")
+            await self._fill_answers(root, answers)
+            if cv_path:
+                await self._upload_cv(root, cv_path)
+
+            if screenshot_each_step:
+                screenshot_path = str(self._external_step_screenshot_file(posting.id, step))
+                await target_page.screenshot(path=screenshot_path, full_page=True)
+
+            submit_control = await self._find_submit_control(target_page)
+            if submit_control is not None:
+                if dry_run:
+                    return (
+                        "dry-run",
+                        "Reached submit in external apply flow. Submission skipped by dry-run.",
+                        screenshot_path,
+                    )
+
+                await submit_control.click()
+                await target_page.wait_for_timeout(1800)
+                return (
+                    "submitted",
+                    "Application submitted through external apply flow.",
+                    screenshot_path,
+                )
+
+            advanced = await self._advance_step(page=target_page, root=root, step=100 + step)
+            if not advanced:
+                break
+
+        if dry_run:
+            return (
+                "dry-run",
+                "External apply opened but submit step was not reached.",
+                screenshot_path,
+            )
+
+        return (
+            "failed",
+            "External apply flow could not reach a submit action.",
+            screenshot_path,
+        )
+
+    async def _find_external_apply_control(self, page: Page) -> Locator | None:
+        apply_pattern = re.compile(
+            r"(apply|apply\s*now|solicitar|postular|inscribirse|candidatar)",
+            re.IGNORECASE,
+        )
+
+        forbidden = [
+            "easy apply",
+            "solicitud sencilla",
+            "saved",
+            "guardado",
+        ]
+
+        button = await self._first_clickable_control(
+            root=page,
+            role="button",
+            pattern=apply_pattern,
+            forbidden_words=forbidden,
+        )
+        if button is not None:
+            return button
+
+        link = await self._first_clickable_control(
+            root=page,
+            role="link",
+            pattern=apply_pattern,
+            forbidden_words=forbidden,
+        )
+        if link is not None:
+            return link
+
+        css_fallbacks = [
+            "button.jobs-apply-button",
+            "a.jobs-apply-button",
+            "button[data-control-name*='apply']",
+            "a[data-control-name*='apply']",
+        ]
+
+        for selector in css_fallbacks:
+            control = page.locator(selector)
+            count = await control.count()
+            for index in range(min(count, 8)):
+                current = control.nth(index)
+                try:
+                    if not await current.is_visible():
+                        continue
+                    if selector.startswith("button") and await current.is_disabled():
+                        continue
+                except Exception:
+                    continue
+
+                text = await self._read_control_text(current)
+                lower = text.lower()
+                if any(word in lower for word in forbidden):
+                    continue
+                if self._is_dangerous_button_label(lower):
+                    continue
+
+                return current
+
+        return None
+
+    async def _find_submit_control(self, page: Page) -> Locator | None:
+        submit_pattern = re.compile(
+            r"(submit|send\s*application|enviar\s*solicitud|postular|solicitar|finish|done)",
+            re.IGNORECASE,
+        )
+        by_role = await self._first_clickable_control(
+            root=page,
+            role="button",
+            pattern=submit_pattern,
+            forbidden_words=["cancel", "dismiss", "close", "cerrar", "descartar"],
+        )
+        if by_role is not None:
+            return by_role
+
+        submit_inputs = page.locator("input[type='submit'], button[type='submit']")
+        count = await submit_inputs.count()
+        for index in range(min(count, 10)):
+            control = submit_inputs.nth(index)
+            try:
+                if not await control.is_visible():
+                    continue
+                if await control.is_disabled():
+                    continue
+            except Exception:
+                continue
+
+            text = await self._read_control_text(control)
+            if self._is_dangerous_button_label(text):
+                continue
+            return control
+
+        return None
+
+    async def _click_apply_control(self, page: Page, control: Locator) -> Page:
+        context = page.context
+        opened_page: Page | None = None
+
+        try:
+            async with context.expect_page(timeout=4000) as page_info:
+                await control.click()
+            opened_page = page_info.value
+        except Exception:
+            pass
+
+        target_page = opened_page or page
+        await target_page.wait_for_timeout(1600)
+        return target_page
+
+    async def _first_clickable_control(
+        self,
+        root: Page | Locator,
+        role: str,
+        pattern: re.Pattern[str],
+        forbidden_words: list[str],
+    ) -> Locator | None:
+        controls = root.get_by_role(role, name=pattern)
+        count = await controls.count()
+        for index in range(min(count, 30)):
+            control = controls.nth(index)
+            try:
+                if not await control.is_visible():
+                    continue
+                if role == "button" and await control.is_disabled():
+                    continue
+            except Exception:
+                continue
+
+            text = await self._read_control_text(control)
+            lower = text.lower()
+            if any(word in lower for word in forbidden_words):
+                continue
+            if self._is_dangerous_button_label(lower):
+                continue
+
+            return control
+
+        return None
+
+    async def _read_control_text(self, control: Locator) -> str:
+        parts: list[str] = []
+        try:
+            parts.append((await control.inner_text()).strip())
+        except Exception:
+            pass
+        for attr in ["aria-label", "title"]:
+            try:
+                value = (await control.get_attribute(attr) or "").strip()
+            except Exception:
+                value = ""
+            if value:
+                parts.append(value)
+        return " ".join(part for part in parts if part).strip()
+
+    async def _advance_step(self, page: Page, root: Locator, step: int) -> bool:
         labels = [
             r"^Next$",
             r"Siguiente",
@@ -272,6 +518,9 @@ class LinkedInEasyApplyAutomator:
             r"Continuar",
             r"Review",
             r"Revisar",
+            r"Continue to next step",
+            r"Go to review",
+            r"Revisar solicitud",
         ]
 
         for label in labels:
@@ -279,12 +528,158 @@ class LinkedInEasyApplyAutomator:
             if await button.count() == 0:
                 continue
             if await button.first.is_disabled():
-                return False
+                continue
             await button.first.click()
             await page.wait_for_timeout(1200)
             return True
 
+        if self.ai_navigation_enabled and self.ai_client and self.ai_navigation_max_attempts > 0:
+            for _ in range(self.ai_navigation_max_attempts):
+                clicked = await self._advance_step_with_ai(page=page, root=root, step=step)
+                if clicked:
+                    return True
+
         return False
+
+    async def _advance_step_with_ai(self, page: Page, root: Locator, step: int) -> bool:
+        candidates = await self._collect_button_candidates(root)
+        if not candidates:
+            return False
+
+        modal_text = (await root.inner_text()).strip()
+        modal_text = modal_text[:3500]
+
+        prompt_payload = {
+            "goal": "Choose the best button to continue a LinkedIn Easy Apply flow.",
+            "step": step,
+            "modal_text": modal_text,
+            "buttons": candidates,
+            "rules": [
+                "Prefer next/continue/review/submit progression",
+                "Never choose dismiss, close, cancel, discard, not now",
+                "If no valid progression button exists, return action=none",
+                "Return strict JSON only",
+            ],
+            "response_schema": {
+                "action": "click | none",
+                "button_id": "number or null",
+                "reason": "short string",
+            },
+        }
+
+        try:
+            assert self.ai_client is not None
+            response = await asyncio.to_thread(
+                self.ai_client.responses.create,
+                model=self.ai_navigation_model,
+                input=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are an assistant choosing which button to click in a job application modal. "
+                            "Return JSON only."
+                        ),
+                    },
+                    {"role": "user", "content": json.dumps(prompt_payload)},
+                ],
+                text={"format": {"type": "json_object"}},
+            )
+            text = self._extract_output_text(response)
+            decision = json.loads(text)
+        except Exception:
+            return False
+
+        action = str(decision.get("action", "none")).strip().lower()
+        if action != "click":
+            return False
+
+        chosen_id = decision.get("button_id")
+        if not isinstance(chosen_id, int):
+            return False
+
+        chosen = next((item for item in candidates if item["id"] == chosen_id), None)
+        if not chosen:
+            return False
+
+        label_text = str(chosen.get("text", ""))
+        if self._is_dangerous_button_label(label_text):
+            return False
+
+        button = root.locator("button").nth(chosen_id)
+        if await button.count() == 0:
+            return False
+        if await button.is_disabled():
+            return False
+
+        await button.click()
+        await page.wait_for_timeout(1400)
+        return True
+
+    async def _collect_button_candidates(self, root: Locator) -> list[dict[str, Any]]:
+        buttons = root.locator("button")
+        count = await buttons.count()
+        candidates: list[dict[str, Any]] = []
+
+        for index in range(min(count, 40)):
+            button = buttons.nth(index)
+            try:
+                if not await button.is_visible():
+                    continue
+                if await button.is_disabled():
+                    continue
+            except Exception:
+                continue
+
+            text = (await button.inner_text()).strip()
+            aria_label = (await button.get_attribute("aria-label") or "").strip()
+            title = (await button.get_attribute("title") or "").strip()
+            merged_text = " ".join(part for part in [text, aria_label, title] if part).strip()
+            if not merged_text:
+                continue
+            if self._is_dangerous_button_label(merged_text):
+                continue
+
+            candidates.append(
+                {
+                    "id": index,
+                    "text": merged_text,
+                }
+            )
+
+        return candidates
+
+    def _is_dangerous_button_label(self, label: str) -> bool:
+        lower = label.lower()
+        danger_words = [
+            "dismiss",
+            "discard",
+            "cancel",
+            "close",
+            "not now",
+            "cerrar",
+            "descartar",
+            "cancelar",
+            "omitir",
+            "salir",
+        ]
+        return any(word in lower for word in danger_words)
+
+    def _extract_output_text(self, response: Any) -> str:
+        output_text = getattr(response, "output_text", None)
+        if isinstance(output_text, str) and output_text.strip():
+            return output_text
+
+        output = getattr(response, "output", None)
+        if isinstance(output, list):
+            for event in output:
+                content = event.get("content") if isinstance(event, dict) else None
+                if isinstance(content, list):
+                    for chunk in content:
+                        text = chunk.get("text") if isinstance(chunk, dict) else None
+                        if isinstance(text, str) and text.strip():
+                            return text
+
+        raise ValueError("OpenAI response did not contain text output")
 
     async def _discard_modal(self, page: Page) -> None:
         dismiss = page.get_by_role("button", name=re.compile(r"(dismiss|close|cerrar)", re.IGNORECASE))
@@ -304,3 +699,7 @@ class LinkedInEasyApplyAutomator:
     def _step_screenshot_file(self, posting_id: str, step: int) -> Path:
         timestamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
         return self.screenshot_dir / f"{posting_id}-linkedin-step{step}-{timestamp}.png"
+
+    def _external_step_screenshot_file(self, posting_id: str, step: int) -> Path:
+        timestamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+        return self.screenshot_dir / f"{posting_id}-external-step{step}-{timestamp}.png"

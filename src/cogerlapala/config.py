@@ -24,9 +24,22 @@ class Settings(BaseSettings):
         alias="LINKEDIN_MANUAL_LOGIN_TIMEOUT_SECONDS",
     )
     linkedin_max_search_pages: int = Field(default=3, alias="LINKEDIN_MAX_SEARCH_PAGES")
+    linkedin_ai_navigation_enabled: bool = Field(
+        default=True,
+        alias="LINKEDIN_AI_NAVIGATION_ENABLED",
+    )
+    linkedin_ai_navigation_model: str = Field(
+        default="gpt-4.1-mini",
+        alias="LINKEDIN_AI_NAVIGATION_MODEL",
+    )
+    linkedin_ai_navigation_max_attempts: int = Field(
+        default=1,
+        alias="LINKEDIN_AI_NAVIGATION_MAX_ATTEMPTS",
+    )
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        # Load local overrides first, then fallback to .env if needed.
+        env_file=(".env.local", ".env"),
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
